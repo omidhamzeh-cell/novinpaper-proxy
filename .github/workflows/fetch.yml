@@ -21,7 +21,7 @@ jobs:
           mkdir -p results
           
           # ۱. پاکسازی DOI – فقط رشته اصلی رو نگه می‌داره
-          DOI=$(echo "${{ github.event.inputs.doi }}" | tr -d '\n\r' | tr -d ' ')
+          DOI=$(echo "${{ github.event.inputs.doi }}" | grep -oP '10\.\d{4,}/[^\s\"<>|]+' | head -1)
           echo "Cleaned DOI: '$DOI'"
           
           # ۲. درخواست به CrossRef
