@@ -19,27 +19,36 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fetch data from Crossref
+      - name: Fetch and extract article data
         run: |
           mkdir -p results
           if [ -n "${{ github.event.inputs.doi }}" ]; then
-            # حالت DOI
             DOI="${{ github.event.inputs.doi }}"
             SAFE_NAME=$(echo "$DOI" | tr '/' '_')
-            curl -s -o "results/${SAFE_NAME}.json" \
+            curl -s -o tmp.json \
               -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
               "https://api.crossref.org/works/${DOI}"
-            echo "Saved DOI result."
+            # فقط فیلدهای ضروری را بیرون بکشیم (عنوان، نویسنده، سال، ژورنال، DOI)
+            jq '{
+              title: .message.title[0],
+              author: [.message.author[]? | "\(.given) \(.family)"],
+              year: .message.created."date-parts"[0][0],
+              journal: .message."container-title"[0],
+              doi: .DOI
+            }' tmp.json > "results/${SAFE_NAME}.json"
           elif [ -n "${{ github.event.inputs.query }}" ]; then
-            # حالت جستجوی کلیدواژه
             QUERY="${{ github.event.inputs.query }}"
             SAFE_NAME=$(echo "$QUERY" | tr ' /' '_')
             curl -s -o tmp.json \
               -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
               "https://api.crossref.org/works?query=${QUERY}&rows=1"
-            # استخراج اولین نتیجه با jq
-            jq '.message.items[0]' tmp.json > "results/${SAFE_NAME}.json"
-            echo "Saved search result for: $QUERY"
+            jq '{
+              title: .message.items[0].title[0],
+              author: [.message.items[0].author[]? | "\(.given) \(.family)"],
+              year: .message.items[0].created."date-parts"[0][0],
+              journal: .message.items[0]."container-title"[0],
+              doi: .message.items[0].DOI
+            }' tmp.json > "results/${SAFE_NAME}.json"
           else
             echo "No input provided."
             exit 1
