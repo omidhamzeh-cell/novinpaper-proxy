@@ -1,11 +1,14 @@
-name: Fetch Raw Crossref Response
+name: Fetch Article Info
 
 on:
   workflow_dispatch:
     inputs:
       doi:
-        description: 'مقاله DOI'
-        required: true
+        description: 'مقاله DOI (اختیاری)'
+        required: false
+      query:
+        description: 'کلیدواژه جستجو (اختیاری)'
+        required: false
 
 jobs:
   fetch:
@@ -16,21 +19,36 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fetch raw response from Crossref
+      - name: Fetch data from Crossref
         run: |
           mkdir -p results
-          DOI="10.1016/j.clnu.2020.12.022"
-          SAFE_NAME=$(echo "$DOI" | tr '/' '_')
-          echo "Saving as: results/${SAFE_NAME}.json"
-          curl -s -o "results/${SAFE_NAME}.json" \
-            -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
-            "https://api.crossref.org/works/${DOI}"
-          echo "Raw response saved."
+          if [ -n "${{ github.event.inputs.doi }}" ]; then
+            # حالت DOI
+            DOI="${{ github.event.inputs.doi }}"
+            SAFE_NAME=$(echo "$DOI" | tr '/' '_')
+            curl -s -o "results/${SAFE_NAME}.json" \
+              -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
+              "https://api.crossref.org/works/${DOI}"
+            echo "Saved DOI result."
+          elif [ -n "${{ github.event.inputs.query }}" ]; then
+            # حالت جستجوی کلیدواژه
+            QUERY="${{ github.event.inputs.query }}"
+            SAFE_NAME=$(echo "$QUERY" | tr ' /' '_')
+            curl -s -o tmp.json \
+              -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
+              "https://api.crossref.org/works?query=${QUERY}&rows=1"
+            # استخراج اولین نتیجه با jq
+            jq '.message.items[0]' tmp.json > "results/${SAFE_NAME}.json"
+            echo "Saved search result for: $QUERY"
+          else
+            echo "No input provided."
+            exit 1
+          fi
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add results/
-          git commit -m "Add raw response for ${{ github.event.inputs.doi }}" || echo "No changes"
+          git commit -m "Update result" || echo "No changes"
           git push
