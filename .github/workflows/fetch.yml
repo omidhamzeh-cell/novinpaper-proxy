@@ -11,7 +11,7 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write          # اجازه نوشتن در مخزن
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,18 +21,25 @@ jobs:
           mkdir -p results
           DOI="${{ github.event.inputs.doi }}"
           curl -s -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
-            "https://api.crossref.org/works/$DOI" > tmp.json
-          # استخراج فیلدهای ضروری
-          sudo apt-get install -y jq
-          jq '{
-            title: .message.title[0],
-            author: [.message.author[]? | "\(.given) \(.family)"],
-            year: .message.created."date-parts"[0][0],
-            journal: .message."container-title"[0],
-            publisher: .message.publisher,
-            doi: .message.DOI,
-            abstract: .message.abstract
-          }' tmp.json > "results/$DOI.json"
+            "https://api.crossref.org/works/${DOI}" > tmp.json
+          # استفاده از python3 برای استخراج فیلدها (بدون نیاز به نصب)
+          python3 -c "
+          import json, sys
+          with open('tmp.json') as f:
+              data = json.load(f)
+          msg = data['message']
+          result = {
+              'title': msg.get('title', ['N/A'])[0],
+              'author': [f\"{a.get('given','')} {a.get('family','')}\".strip() for a in msg.get('author', [])],
+              'year': msg.get('created', {}).get('date-parts', [[None]])[0][0],
+              'journal': msg.get('container-title', ['N/A'])[0],
+              'publisher': msg.get('publisher', 'N/A'),
+              'doi': msg.get('DOI', '$DOI'),
+              'abstract': msg.get('abstract', 'N/A')
+          }
+          with open('results/${DOI}.json', 'w') as out:
+              json.dump(result, out, ensure_ascii=False)
+          "
 
       - name: Commit and push result
         run: |
