@@ -11,40 +11,44 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     permissions:
-      contents: write          # اجازه نوشتن در مخزن
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get metadata from CrossRef
+      - name: Fetch data from CrossRef
+        id: fetch
         run: |
           mkdir -p results
           DOI="${{ github.event.inputs.doi }}"
-          curl -s -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
-            "https://api.crossref.org/works/${DOI}" > tmp.json
-          # استفاده از python3 برای استخراج فیلدها (بدون نیاز به نصب)
-          python3 -c "
-          import json, sys
-          with open('tmp.json') as f:
-              data = json.load(f)
-          msg = data['message']
-          result = {
-              'title': msg.get('title', ['N/A'])[0],
-              'author': [f\"{a.get('given','')} {a.get('family','')}\".strip() for a in msg.get('author', [])],
-              'year': msg.get('created', {}).get('date-parts', [[None]])[0][0],
-              'journal': msg.get('container-title', ['N/A'])[0],
-              'publisher': msg.get('publisher', 'N/A'),
-              'doi': msg.get('DOI', '$DOI'),
-              'abstract': msg.get('abstract', 'N/A')
-          }
-          with open('results/${DOI}.json', 'w') as out:
-              json.dump(result, out, ensure_ascii=False)
-          "
+          echo "Fetching DOI: $DOI"
+          # درخواست به CrossRef با نمایش خطاها
+          HTTP_CODE=$(curl -s -w "%{http_code}" -o tmp.json \
+            -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
+            "https://api.crossref.org/works/${DOI}")
+          echo "HTTP status: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "CrossRef returned HTTP $HTTP_CODE" > "results/${DOI}_error.txt"
+            cat tmp.json >> "results/${DOI}_error.txt"
+            exit 1
+          fi
+          # استخراج فیلدهای اصلی با grep و sed (ساده)
+          TITLE=$(grep -o '"title":\["[^"]*"' tmp.json | head -1 | sed 's/.*\["//;s/"\].*//')
+          AUTHOR=$(grep -o '"given":"[^"]*","family":"[^"]*"' tmp.json | head -1 | sed 's/"given":"//;s/","family":"/ /;s/"//g')
+          YEAR=$(grep -o '"date-parts":\[\[[0-9]*' tmp.json | head -1 | sed 's/.*\[\[//')
+          JOURNAL=$(grep -o '"container-title":\["[^"]*"' tmp.json | head -1 | sed 's/.*\["//;s/"\].*//')
+          PUBLISHER=$(grep -o '"publisher":"[^"]*"' tmp.json | head -1 | sed 's/.*":"//;s/"//')
+          ABSTRACT=$(grep -o '"abstract":"[^"]*"' tmp.json | head -1 | sed 's/.*":"//;s/"//')
+          # ذخیره به صورت JSON
+          printf '{"title":"%s","author":"%s","year":"%s","journal":"%s","publisher":"%s","doi":"%s","abstract":"%s"}\n' \
+            "$TITLE" "$AUTHOR" "$YEAR" "$JOURNAL" "$PUBLISHER" "$DOI" "$ABSTRACT" > "results/${DOI}.json"
+          echo "Data extracted and saved."
 
-      - name: Commit and push result
+      - name: Commit and push
+        if: always()  # حتی در صورت شکست مرحله قبل هم اجرا شود تا فایل‌های خطا ذخیره شوند
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add results/
-          git commit -m "Add result for ${{ github.event.inputs.doi }}" || echo "No changes"
+          git add results/ || true
+          git commit -m "Update result for ${{ github.event.inputs.doi }}" || echo "No changes"
           git push
