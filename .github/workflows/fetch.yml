@@ -19,36 +19,51 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fetch and extract article data
+      - name: Fetch and extract data with Python
         run: |
           mkdir -p results
           if [ -n "${{ github.event.inputs.doi }}" ]; then
-            DOI="${{ github.event.inputs.doi }}"
-            SAFE_NAME=$(echo "$DOI" | tr '/' '_')
+            INPUT="${{ github.event.inputs.doi }}"
+            SAFE_NAME=$(echo "$INPUT" | tr '/' '_')
             curl -s -o tmp.json \
               -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
-              "https://api.crossref.org/works/${DOI}"
-            # فقط فیلدهای ضروری را بیرون بکشیم (عنوان، نویسنده، سال، ژورنال، DOI)
-            jq '{
-              title: .message.title[0],
-              author: [.message.author[]? | "\(.given) \(.family)"],
-              year: .message.created."date-parts"[0][0],
-              journal: .message."container-title"[0],
-              doi: .DOI
-            }' tmp.json > "results/${SAFE_NAME}.json"
+              "https://api.crossref.org/works/${INPUT}"
+            python3 -c "
+          import json
+          with open('tmp.json') as f:
+              data = json.load(f)
+          msg = data['message']
+          result = {
+              'title': msg.get('title', ['N/A'])[0],
+              'author': [f\"{a.get('given','')} {a.get('family','')}\".strip() for a in msg.get('author', [])],
+              'year': msg.get('created', {}).get('date-parts', [[None]])[0][0],
+              'journal': msg.get('container-title', ['N/A'])[0],
+              'doi': msg.get('DOI', 'N/A')
+          }
+          with open('results/${SAFE_NAME}.json', 'w') as out:
+              json.dump(result, out, ensure_ascii=False)
+          "
           elif [ -n "${{ github.event.inputs.query }}" ]; then
             QUERY="${{ github.event.inputs.query }}"
             SAFE_NAME=$(echo "$QUERY" | tr ' /' '_')
             curl -s -o tmp.json \
               -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
               "https://api.crossref.org/works?query=${QUERY}&rows=1"
-            jq '{
-              title: .message.items[0].title[0],
-              author: [.message.items[0].author[]? | "\(.given) \(.family)"],
-              year: .message.items[0].created."date-parts"[0][0],
-              journal: .message.items[0]."container-title"[0],
-              doi: .message.items[0].DOI
-            }' tmp.json > "results/${SAFE_NAME}.json"
+            python3 -c "
+          import json
+          with open('tmp.json') as f:
+              data = json.load(f)
+          item = data['message']['items'][0]
+          result = {
+              'title': item.get('title', ['N/A'])[0],
+              'author': [f\"{a.get('given','')} {a.get('family','')}\".strip() for a in item.get('author', [])],
+              'year': item.get('created', {}).get('date-parts', [[None]])[0][0],
+              'journal': item.get('container-title', ['N/A'])[0],
+              'doi': item.get('DOI', 'N/A')
+          }
+          with open('results/${SAFE_NAME}.json', 'w') as out:
+              json.dump(result, out, ensure_ascii=False)
+          "
           else
             echo "No input provided."
             exit 1
