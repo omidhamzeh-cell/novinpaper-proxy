@@ -1,0 +1,43 @@
+name: Fetch Article Info
+
+on:
+  workflow_dispatch:
+    inputs:
+      doi:
+        description: 'مقاله DOI'
+        required: true
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get metadata from CrossRef
+        run: |
+          mkdir -p results
+          DOI="${{ github.event.inputs.doi }}"
+          curl -s -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
+            "https://api.crossref.org/works/$DOI" > tmp.json
+          # استخراج فیلدهای ضروری
+          sudo apt-get install -y jq
+          jq '{
+            title: .message.title[0],
+            author: [.message.author[]? | "\(.given) \(.family)"],
+            year: .message.created."date-parts"[0][0],
+            journal: .message."container-title"[0],
+            publisher: .message.publisher,
+            doi: .message.DOI,
+            abstract: .message.abstract
+          }' tmp.json > "results/$DOI.json"
+
+      - name: Commit and push result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add results/
+          git commit -m "Add result for ${{ github.event.inputs.doi }}" || echo "No changes"
+          git push
