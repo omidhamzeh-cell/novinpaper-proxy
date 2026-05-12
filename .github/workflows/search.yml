@@ -1,0 +1,39 @@
+name: Search Article by Keyword
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: 'کلیدواژه'
+        required: true
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Search Crossref and save first result
+        run: |
+          mkdir -p results
+          QUERY="${{ github.event.inputs.query }}"
+          SAFE_NAME=$(echo "$QUERY" | tr ' /' '_' | tr -d '\n\r')
+          echo "Searching for: $QUERY"
+          # دریافت ۱ نتیجه
+          curl -s -o tmp.json \
+            -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
+            "https://api.crossref.org/works?query=${QUERY}&rows=1"
+          # استخراج اولین نتیجه کامل (کل JSON) ذخیره شود
+          jq '.message.items[0]' tmp.json > "results/${SAFE_NAME}_search.json"
+          echo "Saved to results/${SAFE_NAME}_search.json"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add results/
+          git commit -m "Search result for ${{ github.event.inputs.query }}" || echo "No changes"
+          git push
