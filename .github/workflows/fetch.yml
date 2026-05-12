@@ -20,9 +20,9 @@ jobs:
         run: |
           mkdir -p results
           
-          # ۱. پاکسازی DOI (حذف فضای خالی، خط جدید، و کاراکترهای مخفی)
+          # ۱. پاکسازی DOI – فقط رشته اصلی رو نگه می‌داره
           DOI=$(echo "${{ github.event.inputs.doi }}" | tr -d '\n\r' | tr -d ' ')
-          echo "Cleaned DOI: $DOI"
+          echo "Cleaned DOI: '$DOI'"
           
           # ۲. درخواست به CrossRef
           HTTP_CODE=$(curl -s -w "%{http_code}" -o tmp.json \
@@ -30,14 +30,13 @@ jobs:
             "https://api.crossref.org/works/${DOI}")
           echo "HTTP status: $HTTP_CODE"
           
-          # ۳. اگر خطا بود، فایل خطا بساز و متوقف شو
           if [ "$HTTP_CODE" != "200" ]; then
             echo "CrossRef returned HTTP $HTTP_CODE" > "results/${DOI}_error.txt"
             cat tmp.json >> "results/${DOI}_error.txt"
             exit 1
           fi
           
-          # ۴. استخراج داده‌ها با پایتون (ساده و مقاوم)
+          # ۳. استخراج با پایتون (مقاوم و دقیق)
           python3 -c "
           import json
           with open('tmp.json') as f:
@@ -52,11 +51,10 @@ jobs:
               'doi': msg.get('DOI', 'N/A'),
               'abstract': msg.get('abstract', 'N/A')
           }
-          with open('results/${DOI}.json', 'w') as out:
+          with open(f'results/{DOI}.json', 'w') as out:
               json.dump(result, out, ensure_ascii=False)
+          print('Data saved to results/{DOI}.json')
           "
-          
-          echo "Data extracted and saved to results/${DOI}.json"
 
       - name: Commit and push
         if: always()
