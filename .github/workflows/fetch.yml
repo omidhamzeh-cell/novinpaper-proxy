@@ -1,4 +1,4 @@
-name: Fetch Article Info
+name: Fetch Raw Crossref Response
 
 on:
   workflow_dispatch:
@@ -16,51 +16,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fetch and extract article data
+      - name: Fetch raw response from Crossref
         run: |
           mkdir -p results
-          
-          # ۱. پاکسازی DOI – فقط رشته اصلی رو نگه می‌داره
           DOI=$(echo "${{ github.event.inputs.doi }}" | grep -oP '10\.\d{4,}/[^\s\"<>|]+' | head -1)
-          echo "Cleaned DOI: '$DOI'"
-          
-          # ۲. درخواست به CrossRef
-          HTTP_CODE=$(curl -s -w "%{http_code}" -o tmp.json \
+          echo "Cleaned DOI: $DOI"
+          curl -s -o "results/$DOI.json" \
             -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
-            "https://api.crossref.org/works/${DOI}")
-          echo "HTTP status: $HTTP_CODE"
-          
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "CrossRef returned HTTP $HTTP_CODE" > "results/${DOI}_error.txt"
-            cat tmp.json >> "results/${DOI}_error.txt"
-            exit 1
-          fi
-          
-          # ۳. استخراج با پایتون (مقاوم و دقیق)
-          python3 -c "
-          import json
-          with open('tmp.json') as f:
-              data = json.load(f)
-          msg = data['message']
-          result = {
-              'title': msg.get('title', ['N/A'])[0],
-              'author': [f\"{a.get('given','')} {a.get('family','')}\".strip() for a in msg.get('author', [])],
-              'year': msg.get('created', {}).get('date-parts', [[None]])[0][0],
-              'journal': msg.get('container-title', ['N/A'])[0],
-              'publisher': msg.get('publisher', 'N/A'),
-              'doi': msg.get('DOI', 'N/A'),
-              'abstract': msg.get('abstract', 'N/A')
-          }
-          with open(f'results/{DOI}.json', 'w') as out:
-              json.dump(result, out, ensure_ascii=False)
-          print('Data saved to results/{DOI}.json')
-          "
+            "https://api.crossref.org/works/$DOI"
+          echo "Raw response saved to results/$DOI.json"
 
       - name: Commit and push
-        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add results/ tmp.json || true
-          git commit -m "Update result for ${{ github.event.inputs.doi }}" || echo "No changes"
+          git add results/
+          git commit -m "Add raw response for ${{ github.event.inputs.doi }}" || echo "No changes"
           git push
