@@ -19,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fetch and extract data with Python
+      - name: Fetch and extract data
         run: |
           mkdir -p results
           if [ -n "${{ github.event.inputs.doi }}" ]; then
@@ -46,9 +46,11 @@ jobs:
           elif [ -n "${{ github.event.inputs.query }}" ]; then
             QUERY="${{ github.event.inputs.query }}"
             SAFE_NAME=$(echo "$QUERY" | tr ' /' '_')
-            curl -s -o tmp.json \
+            curl -s -G -o tmp.json \
               -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
-              "https://api.crossref.org/works?query=${QUERY}&rows=1"
+              --data-urlencode "query=${QUERY}" \
+              --data-urlencode "rows=1" \
+              "https://api.crossref.org/works"
             python3 -c "
           import json
           with open('tmp.json') as f:
