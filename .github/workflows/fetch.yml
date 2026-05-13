@@ -9,6 +9,10 @@ on:
       query:
         description: 'کلیدواژه جستجو (اختیاری)'
         required: false
+      filename:
+        description: 'نام فایل خروجی (بدون مسیر)'
+        required: true
+        default: 'result'
 
 jobs:
   fetch:
@@ -21,10 +25,9 @@ jobs:
 
       - name: Fetch and extract data
         run: |
-          mkdir -p results
+          FILENAME="${{ github.event.inputs.filename }}.json"
           if [ -n "${{ github.event.inputs.doi }}" ]; then
             INPUT="${{ github.event.inputs.doi }}"
-            SAFE_NAME=$(echo "$INPUT" | tr '/' '_')
             curl -s -o tmp.json \
               -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
               "https://api.crossref.org/works/${INPUT}"
@@ -40,12 +43,11 @@ jobs:
               'journal': msg.get('container-title', ['N/A'])[0],
               'doi': msg.get('DOI', 'N/A')
           }
-          with open('results/${SAFE_NAME}.json', 'w') as out:
+          with open('${FILENAME}', 'w') as out:
               json.dump(result, out, ensure_ascii=False)
           "
           elif [ -n "${{ github.event.inputs.query }}" ]; then
             QUERY="${{ github.event.inputs.query }}"
-            SAFE_NAME=$(echo "$QUERY" | tr ' /' '_')
             curl -s -G -o tmp.json \
               -H "User-Agent: OmidPaperBot/1.0 (mailto:omidh20202@gmail.com)" \
               --data-urlencode "query=${QUERY}" \
@@ -63,7 +65,7 @@ jobs:
               'journal': item.get('container-title', ['N/A'])[0],
               'doi': item.get('DOI', 'N/A')
           }
-          with open('results/${SAFE_NAME}.json', 'w') as out:
+          with open('${FILENAME}', 'w') as out:
               json.dump(result, out, ensure_ascii=False)
           "
           else
@@ -75,6 +77,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add results/
-          git commit -m "Update result" || echo "No changes"
+          git add "*.json"
+          git commit -m "Add ${{ github.event.inputs.filename }}" || echo "No changes"
           git push
